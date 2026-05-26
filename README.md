@@ -1,0 +1,132 @@
+# Video Transcription Pipeline
+
+Multi-stage transcription pipeline for short-form video/audio content, producing structured output with speaker diarization, multi-language detection, English translation, and on-screen text extraction.
+
+## Pipeline Architecture
+
+```
+Video/Audio Input
+       │
+       ▼
+┌──────────────────────────────────┐
+│ 1. Whisper tiny (local, ~10ms)   │  Language detection
+└──────────────┬───────────────────┘
+               │
+               ▼
+┌──────────────────────────────────┐
+│ 2. Chirp 3                       │  Speaker diarization
+│                                  │
+└──────────────┬───────────────────┘
+               │
+               ▼
+┌──────────────────────────────────┐
+│ 3. Gemini 2.5 Flash              │  Structured transcription
+│    (Pro fallback if sparse)       │  with diarization context
+└──────────────────────────────────┘
+```
+
+### Fallback chain
+- If diarization returns < 3 segments → Gemini 2.5 Pro (no diarization context)
+
+## Output Schema
+
+The pipeline produces a `TranscriptionResult` with:
+- **text** — full English transcript
+- **diarizedTranscript** — speaker-labeled segments with per-segment language and translation
+- **audioMode** — spoken-narration / music-only / music-with-lyrics / silent / mixed
+- **detectedLanguage** / **detectedLanguageName** — primary spoken language
+- **languagesUsed** / **languagesUsedNames** — all detected languages
+- **isTranslated** — whether any segment needed translation
+
+Each `DiarizedSegment` contains:
+- **speaker** — creator / ai / narrator / on-screen-ocr / person1..personN / other
+- **text** — English translation
+- **originalText** — original language text
+- **language** — ISO 639-1 code
+- **languageName** — human-readable language name
+
+## Setup
+
+### Prerequisites
+- Python 3.11+
+- ffmpeg installed (`apt install ffmpeg` or `brew install ffmpeg`)
+- GCP service account with Speech-to-Text API enabled (for Chirp 3 diarization)
+
+### Install
+
+```bash
+pip install -r requirements.txt
+```
+
+### Configure
+
+```bash
+cp .env.example .env
+# Fill in your API keys
+```
+
+**Required keys (just 2):**
+| Key | Purpose |
+|-----|---------|
+| `GCP_PROJECT_ID` | GCP project ID — used for both Gemini (Vertex AI) and Chirp 3 |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service account JSON (needs `roles/aiplatform.user` + `roles/speech.client`) |
+
+
+## Usage
+
+### CLI
+
+```bash
+# Transcribe a local file
+python transcribe.py video.mp4
+
+# Transcribe from URL
+python transcribe.py https://example.com/video.mp4
+
+# JSON output
+python transcribe.py video.mp4 --json
+
+# Force a specific Gemini model (skips diarization)
+python transcribe.py video.mp4 --model gemini-2.5-pro
+```
+
+### Python
+
+```python
+from transcribe import transcribe
+
+# From a local file
+result = transcribe(input_path="video.mp4")
+
+# From a URL
+result = transcribe(url="https://example.com/video.mp4")
+
+# Access structured output
+print(result["text"])                    # Full English transcript
+print(result["detectedLanguage"])        # e.g. "ko"
+for seg in result["diarizedTranscript"]:
+    print(f"[{seg['speaker']}] ({seg['language']}): {seg['text']}")
+```
+
+## Cost per request
+
+| Stage | Service | Approx. Cost |
+|-------|---------|-------------|
+| Language detection | Whisper tiny (local) | $0.00 |
+| Diarization | Chirp 3 | ~$0.008 (30s video) |
+| Transcription | Gemini 2.5 Flash | ~$0.01-0.02 |
+| Transcription (fallback) | Gemini 2.5 Pro | ~$0.05-0.08 |
+
+**Total: ~$0.02-0.08 per video** depending on model fallback.
+
+## File Structure
+
+```
+├── transcribe.py      # Main pipeline + CLI
+├── schemas.py         # Pydantic models + Gemini prompt
+├── config.py          # Client singletons, usage tracker, retry logic
+├── rate_limiter.py    # Thread-safe token-bucket rate limiter
+├── .env.example       # Environment variable template
+├── requirements.txt   # Python dependencies
+└── TASK.md            # Intern assessment task brief
+```
