@@ -75,4 +75,30 @@ async def health_check() -> str:
     """
     Health check endpoint to verify the service is alive.
     """
-    return "Service is running and healthy."
+@mcp.tool()
+async def get_api_usage(api_key: str) -> str:
+    """
+    Fetches the current API key usage, remaining quota, and available rate limit tokens.
+    Requires the raw API key as input.
+    """
+    from db import get_pool
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, label, usage_count, quota, tokens, last_used_at FROM api_keys WHERE api_key = $1",
+            api_key
+        )
+        if not row:
+            return "API Key not found or invalid."
+        
+        remaining = "Unlimited"
+        if row["quota"] is not None:
+            remaining = str(max(0, row["quota"] - row["usage_count"]))
+            
+        return (
+            f"Label: {row['label']}\n"
+            f"Usage: {row['usage_count']} / {row['quota'] if row['quota'] else 'Unlimited'}\n"
+            f"Remaining Quota: {remaining}\n"
+            f"Rate Limit Tokens Available: {row['tokens']:.2f}\n"
+            f"Last Used: {row['last_used_at']}"
+        )

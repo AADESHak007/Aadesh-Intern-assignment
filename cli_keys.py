@@ -1,6 +1,9 @@
 import argparse
 import asyncio
 import secrets
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 from db import connect_db, disconnect_db, execute, fetch, fetchrow
 
 async def create_key(label: str, quota: int):
@@ -11,19 +14,19 @@ async def create_key(label: str, quota: int):
         RETURNING id, api_key, label, quota
     """
     row = await fetchrow(query, api_key, label, quota)
-    print(f"✅ Created API Key successfully!")
+    print(f"[OK] Created API Key successfully!")
     print(f"ID: {row['id']}")
     print(f"Label: {row['label']}")
     print(f"Quota: {row['quota']}")
     print(f"Key: {row['api_key']}")
-    print("\n⚠️ SAVE THIS KEY. YOU WILL NOT BE ABLE TO SEE IT AGAIN.")
+    print("\n[!] SAVE THIS KEY. YOU WILL NOT BE ABLE TO SEE IT AGAIN.")
 
 async def list_keys():
     query = "SELECT id, label, revoked, usage_count, quota, tokens, last_used_at FROM api_keys ORDER BY created_at DESC"
     rows = await fetch(query)
     print(f"Found {len(rows)} API Keys:\n")
     for row in rows:
-        status = "❌ REVOKED" if row['revoked'] else "✅ ACTIVE"
+        status = "[REVOKED]" if row['revoked'] else "[ACTIVE]"
         print(f"ID: {row['id']} | Label: {row['label']} | Status: {status}")
         print(f"Usage: {row['usage_count']}/{row['quota'] if row['quota'] else 'Unlimited'} | Tokens: {row['tokens']:.2f}")
         print(f"Last Used: {row['last_used_at']}\n")
@@ -32,16 +35,15 @@ async def revoke_key(key_id: str):
     query = "UPDATE api_keys SET revoked = TRUE WHERE id = $1 RETURNING id"
     row = await fetchrow(query, key_id)
     if row:
-        print(f"✅ Key {key_id} has been revoked.")
+        print(f"[OK] Key {key_id} has been revoked.")
     else:
-        print(f"❌ Key {key_id} not found.")
+        print(f"[FAIL] Key {key_id} not found.")
 
 async def main():
     parser = argparse.ArgumentParser(description="API Key Management CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     create_parser = subparsers.add_parser("create", help="Create a new API key")
-    create_parser.add_parser("create", help="Create a new API key")
     create_parser.add_argument("--label", type=str, help="Label for the key (e.g., 'Agent A')")
     create_parser.add_argument("--quota", type=int, default=None, help="Maximum number of requests allowed")
 

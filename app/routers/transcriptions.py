@@ -17,6 +17,7 @@ from app.schemas import (
     TranscriptionJobStatus,
     TranscriptionResult,
     TranscriptionResultEnvelope,
+    UsageResponse,
 )
 
 router = APIRouter()
@@ -243,6 +244,38 @@ async def get_transcription_result(job_id: str, api_key_id: UUID = Depends(verif
         error_message=job.get("error_message"),
         suggested_action=job.get("suggested_action"),
     )
+
+
+@router.get(
+    "/usage",
+    response_model=UsageResponse,
+    summary="Get API Key Usage",
+    description="Fetch your current API key usage, remaining quota, and available rate limit tokens.",
+)
+async def get_api_usage(api_key_id: UUID = Depends(verify_and_rate_limit)) -> UsageResponse:
+    from db import get_pool
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, label, usage_count, quota, tokens, last_used_at FROM api_keys WHERE id = $1",
+            api_key_id
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="API Key not found")
+        
+        remaining = None
+        if row["quota"] is not None:
+            remaining = max(0, row["quota"] - row["usage_count"])
+            
+        return UsageResponse(
+            api_key_id=str(row["id"]),
+            label=row["label"],
+            usage_count=row["usage_count"],
+            quota=row["quota"],
+            remaining_quota=remaining,
+            tokens=row["tokens"],
+            last_used_at=row["last_used_at"],
+        )
 
 
 @router.get("/health")

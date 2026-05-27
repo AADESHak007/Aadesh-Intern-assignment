@@ -137,3 +137,12 @@ class TranscriptionResultEnvelope(BaseModel):
             }
         }
     }
+
+class UsageResponse(BaseModel):
+    api_key_id: str = Field(..., description="The unique ID of the API key")
+    label: str | None = Field(None, description="The label given to the key")
+    usage_count: int = Field(..., description="Total number of jobs submitted")
+    quota: int | None = Field(None, description="Maximum number of jobs allowed (if any)")
+    remaining_quota: int | None = Field(None, description="Number of jobs remaining before hitting quota")
+    tokens: float = Field(..., description="Current rate limiting tokens available")
+    last_used_at: datetime | None = Field(None, description="When the key was last used")
