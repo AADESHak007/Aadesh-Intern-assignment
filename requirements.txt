@@ -4,5 +4,9 @@ google-auth>=2.0.0
 openai-whisper
 torch
 pydantic>=2.0.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.23.0
+python-multipart>=0.0.6
+asyncpg>=0.27.0
 requests>=2.30.0
 python-dotenv>=1.0.0

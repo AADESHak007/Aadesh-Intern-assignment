@@ -22,7 +22,8 @@ load_dotenv()
 CACHE_DIR = pathlib.Path(os.getenv("CACHE_DIR", "cache"))
 TRANSCRIPTS = CACHE_DIR / "transcripts"
 
-for _p in (CACHE_DIR, TRANSCRIPTS):
+UPLOADS_DIR = pathlib.Path(os.getenv("UPLOADS_DIR", "uploads"))
+for _p in (CACHE_DIR, TRANSCRIPTS, UPLOADS_DIR):
     _p.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
