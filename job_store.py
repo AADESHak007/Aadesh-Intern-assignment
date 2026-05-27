@@ -50,6 +50,12 @@ async def list_pending_jobs(limit: int = 5) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+async def list_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
+    query = "SELECT * FROM transcription_jobs ORDER BY created_at DESC LIMIT $1"
+    rows = await fetch(query, limit)
+    return [dict(row) for row in rows]
+
+
 async def claim_next_job() -> dict[str, Any] | None:
     pool = get_pool()
     async with pool.acquire() as conn:
@@ -82,7 +88,7 @@ UPDATE transcription_jobs
 SET status = 'COMPLETED', stage = 'FINALIZING', result = $2, completed_at = now(), updated_at = now()
 WHERE id = $1
 """
-    await execute(query, job_id, result)
+    await execute(query, job_id, json.dumps(result))
 
 
 async def fail_job(

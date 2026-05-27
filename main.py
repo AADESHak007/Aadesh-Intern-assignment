@@ -4,13 +4,13 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from config import UPLOADS_DIR
 from db import connect_db, disconnect_db
-from job_store import create_transcription_job, get_transcription_job
+from job_store import create_transcription_job, get_transcription_job, list_recent_jobs
+from job_worker import process_transcription_job
 
 
 class CreateTranscriptionResponse(BaseModel):
@@ -70,11 +70,12 @@ async def save_upload_file(file: UploadFile) -> str:
 
 @app.post("/transcriptions", status_code=202, response_model=CreateTranscriptionResponse)
 async def create_transcription(
+    background_tasks: BackgroundTasks,
     file: UploadFile | None = File(None),
     source_url: str | None = Form(None),
     model: str = Form("gemini-2.5-flash"),
     callback_url: str | None = Form(None),
-) -> JSONResponse:
+) -> CreateTranscriptionResponse:
     if file is None and not source_url:
         raise HTTPException(status_code=400, detail="Please provide either a file upload or a source_url.")
 
@@ -100,15 +101,37 @@ async def create_transcription(
     if job is None:
         raise HTTPException(status_code=500, detail="Failed to create transcription job.")
 
+    background_tasks.add_task(process_transcription_job, job["id"])
     location = f"/transcriptions/{job['id']}"
-    return JSONResponse(
-        status_code=202,
-        content={
-            "job_id": job["id"],
-            "status": job["status"],
-            "location": location,
-        },
+    return CreateTranscriptionResponse(
+        job_id=str(job["id"]),
+        status=job["status"],
+        location=location,
     )
+
+
+@app.get("/transcriptions", response_model=list[TranscriptionJobStatus])
+async def list_transcriptions(limit: int = 20) -> list[TranscriptionJobStatus]:
+    jobs = await list_recent_jobs(limit)
+    results: list[TranscriptionJobStatus] = []
+    for job in jobs:
+        result_url = None
+        if job["status"] == "COMPLETED":
+            result_url = f"/transcriptions/{job['id']}/result"
+        results.append(
+            TranscriptionJobStatus(
+                job_id=str(job["id"]),
+                status=job["status"],
+                stage=job["stage"],
+                created_at=job["created_at"],
+                updated_at=job["updated_at"],
+                result_url=result_url,
+                error_code=job.get("error_code"),
+                error_message=job.get("error_message"),
+                suggested_action=job.get("suggested_action"),
+            )
+        )
+    return results
 
 
 @app.get("/transcriptions/{job_id}", response_model=TranscriptionJobStatus)
@@ -122,7 +145,7 @@ async def get_transcription_status(job_id: str) -> TranscriptionJobStatus:
         result_url = f"/transcriptions/{job_id}/result"
 
     return TranscriptionJobStatus(
-        job_id=job["id"],
+        job_id=str(job["id"]),
         status=job["status"],
         stage=job["stage"],
         created_at=job["created_at"],
@@ -142,7 +165,7 @@ async def get_transcription_result(job_id: str) -> TranscriptionResultResponse:
 
     if job["status"] == "FAILED":
         return TranscriptionResultResponse(
-            job_id=job["id"],
+            job_id=str(job["id"]),
             status=job["status"],
             stage=job["stage"],
             result=None,
@@ -155,7 +178,7 @@ async def get_transcription_result(job_id: str) -> TranscriptionResultResponse:
         raise HTTPException(status_code=202, detail="Job is still processing")
 
     return TranscriptionResultResponse(
-        job_id=job["id"],
+        job_id=str(job["id"]),
         status=job["status"],
         stage=job["stage"],
         result=job.get("result"),
