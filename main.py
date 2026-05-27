@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
+import os
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -11,6 +12,7 @@ from config import UPLOADS_DIR
 from db import connect_db, disconnect_db
 from job_store import create_transcription_job, get_transcription_job, list_recent_jobs
 from job_worker import process_transcription_job
+from schemas import TranscriptionResult
 
 
 class CreateTranscriptionResponse(BaseModel):
@@ -28,6 +30,7 @@ class TranscriptionJobStatus(BaseModel):
     result_url: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    
     suggested_action: str | None = None
 
 
@@ -41,11 +44,22 @@ class TranscriptionResultResponse(BaseModel):
     suggested_action: str | None = None
 
 
+class TranscriptionResultEnvelope(BaseModel):
+    job_id: str
+    status: str
+    stage: str
+    result: TranscriptionResult | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    suggested_action: str | None = None
+
+
 app = FastAPI(
     title="Agent-First Transcription API",
     description="Asynchronous transcription service for video/audio inputs.",
     version="0.1.0",
 )
+    
 
 
 @app.on_event("startup")
@@ -63,8 +77,24 @@ async def save_upload_file(file: UploadFile) -> str:
     stored_name = f"{uuid4().hex}{suffix}"
     destination = UPLOADS_DIR / stored_name
     destination.parent.mkdir(parents=True, exist_ok=True)
-    contents = await file.read()
-    destination.write_bytes(contents)
+
+    # Enforce upload size limit (default 100MB) by streaming to disk
+    max_size = int(os.getenv("MAX_UPLOAD_SIZE", 100 * 1024 * 1024))
+    total = 0
+    with destination.open("wb") as f:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_size:
+                f.close()
+                try:
+                    destination.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise HTTPException(status_code=413, detail="Uploaded file too large")
+            f.write(chunk)
     return stored_name
 
 
@@ -157,14 +187,14 @@ async def get_transcription_status(job_id: str) -> TranscriptionJobStatus:
     )
 
 
-@app.get("/transcriptions/{job_id}/result", response_model=TranscriptionResultResponse)
-async def get_transcription_result(job_id: str) -> TranscriptionResultResponse:
+@app.get("/transcriptions/{job_id}/result", response_model=TranscriptionResultEnvelope)
+async def get_transcription_result(job_id: str) -> TranscriptionResultEnvelope:
     job = await get_transcription_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     if job["status"] == "FAILED":
-        return TranscriptionResultResponse(
+        return TranscriptionResultEnvelope(
             job_id=str(job["id"]),
             status=job["status"],
             stage=job["stage"],
@@ -177,11 +207,32 @@ async def get_transcription_result(job_id: str) -> TranscriptionResultResponse:
     if job["status"] != "COMPLETED":
         raise HTTPException(status_code=202, detail="Job is still processing")
 
-    return TranscriptionResultResponse(
+    result_obj = None
+    raw = job.get("result")
+    if raw is not None:
+        try:
+            if isinstance(raw, dict):
+                result_obj = TranscriptionResult.model_validate(raw)
+            else:
+                import json as _json
+
+                result_obj = TranscriptionResult.model_validate(_json.loads(raw))
+        except Exception:
+            return TranscriptionResultEnvelope(
+                job_id=str(job["id"]),
+                status=job["status"],
+                stage=job["stage"],
+                result=None,
+                error_code="RESULT_PARSE_ERROR",
+                error_message="Stored transcription result could not be parsed into TranscriptionResult schema.",
+                suggested_action="Inspect raw result payload in the database.",
+            )
+
+    return TranscriptionResultEnvelope(
         job_id=str(job["id"]),
         status=job["status"],
         stage=job["stage"],
-        result=job.get("result"),
+        result=result_obj,
         error_code=job.get("error_code"),
         error_message=job.get("error_message"),
         suggested_action=job.get("suggested_action"),
