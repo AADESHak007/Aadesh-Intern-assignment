@@ -1,0 +1,188 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Agent-First Transcription API",
+    "version": "0.1.0",
+    "description": "Asynchronous transcription API for video/audio inputs. Submit jobs, poll status, and retrieve structured transcription results. Designed for agent consumption; includes machine-readable error codes and suggested actions."
+  },
+  "servers": [
+    { "url": "http://localhost:8000", "description": "Local development" }
+  ],
+  "paths": {
+    
+    "/transcriptions": {
+      "post": {
+        "summary": "Submit transcription job",
+        "description": "Create a new asynchronous transcription job. Provide either a `file` upload (multipart/form-data) or a public `source_url`. Returns a 202 with job id and a location to poll for status.",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary", "description": "Video/audio file upload (max 100MB)" },
+                  "source_url": { "type": "string", "format": "uri", "description": "Public URL to a media file" },
+                  "model": { "type": "string", "description": "Gemini model to use (optional)" },
+                  "callback_url": { "type": "string", "format": "uri", "description": "Optional webhook URL for job completion notifications" }
+                }
+              },
+              "encoding": { "file": { "contentType": "multipart/form-data" } }
+            }
+          },
+          "required": false,
+          "description": "Provide either `file` or `source_url`. If both are provided the server returns 400."
+        },
+        "responses": {
+          "202": {
+            "description": "Job accepted for processing.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CreateTranscriptionResponse" },
+                "examples": {
+                  "accepted": {
+                    "summary": "Accepted",
+                    "value": { "job_id": "324fbb04-6a02-4a23-9f89-6ad2460d7ecb", "status": "PENDING", "location": "/transcriptions/324fbb04-6a02-4a23-9f89-6ad2460d7ecb" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "413": { "description": "Uploaded file too large", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "500": { "description": "Internal server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      },
+
+      "get": {
+        "summary": "List recent transcription jobs",
+        "description": "Return a paginated list of recent transcription jobs and their current status.",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 }, "description": "Maximum number of jobs to return" }
+        ],
+        "responses": {
+          "200": { "description": "A list of transcription jobs.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TranscriptionJobStatus" } } } } },
+          "400": { "description": "Invalid query parameters", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+
+    "/transcriptions/{job_id}": {
+      "get": {
+        "summary": "Get transcription job status",
+        "parameters": [ { "name": "job_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "Job status returned.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TranscriptionJobStatus" } } } },
+          "404": { "description": "Job not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+
+    "/transcriptions/{job_id}/result": {
+      "get": {
+        "summary": "Fetch transcription result",
+        "description": "Return the structured transcription output for a completed job. If the job failed, an error envelope is returned; if still processing, a 202 is returned.",
+        "parameters": [ { "name": "job_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "Transcription result returned.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TranscriptionResultEnvelope" } } } },
+          "202": { "description": "Job is still processing." },
+          "404": { "description": "Job not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    }
+  },
+
+  "components": {
+    "schemas": {
+      "DiarizedSegment": {
+        "type": "object",
+        "properties": {
+          "speaker": { "type": "string", "description": "Speaker label (creator, ai, narrator, on-screen-ocr, person1, ...)" },
+          "text": { "type": "string" },
+          "originalText": { "type": "string" },
+          "language": { "type": "string" },
+          "languageName": { "type": "string" }
+        },
+        "required": ["speaker","text","originalText","language","languageName"]
+      },
+
+      "TranscriptionResult": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "Concatenated English transcript" },
+          "diarizedTranscript": { "type": "array", "items": { "$ref": "#/components/schemas/DiarizedSegment" } },
+          "audioMode": { "type": "string", "enum": ["spoken-narration","music-only","music-with-lyrics","silent","mixed"] },
+          "detectedLanguage": { "type": "string" },
+          "detectedLanguageName": { "type": "string" },
+          "languagesUsed": { "type": "array", "items": { "type": "string" } },
+          "languagesUsedNames": { "type": "array", "items": { "type": "string" } },
+          "isTranslated": { "type": "boolean" }
+        }
+      },
+
+      "CreateTranscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "status": { "type": "string" },
+          "location": { "type": "string" }
+        },
+        "example": { "job_id": "324fbb04-6a02-4a23-9f89-6ad2460d7ecb", "status": "PENDING", "location": "/transcriptions/324fbb04-6a02-4a23-9f89-6ad2460d7ecb" }
+      },
+
+      "TranscriptionJobStatus": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "status": { "type": "string" },
+          "stage": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "result_url": { "type": "string", "nullable": true },
+          "error_code": { "type": "string", "nullable": true },
+          "error_message": { "type": "string", "nullable": true },
+          "suggested_action": { "type": "string", "nullable": true }
+        },
+        "example": { "job_id": "324fbb04-6a02-4a23-9f89-6ad2460d7ecb", "status": "RUNNING", "stage": "TRANSCRIBING", "created_at": "2026-05-27T10:15:13.112737Z", "updated_at": "2026-05-27T10:15:26.222793Z", "result_url": null }
+      },
+
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "suggested_action": { "type": "string", "nullable": true },
+          "details": { "type": "object", "nullable": true }
+        },
+        "example": { "code": "INVALID_INPUT", "message": "Please provide either a file upload or a source_url.", "suggested_action": "Send only one of file or source_url." }
+      },
+
+      "TranscriptionResultEnvelope": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "status": { "type": "string" },
+          "stage": { "type": "string" },
+          "result": { "$ref": "#/components/schemas/TranscriptionResult", "nullable": true },
+          "error_code": { "type": "string", "nullable": true },
+          "error_message": { "type": "string", "nullable": true },
+          "suggested_action": { "type": "string", "nullable": true }
+        },
+        "example": {
+          "job_id": "324fbb04-6a02-4a23-9f89-6ad2460d7ecb",
+          "status": "COMPLETED",
+          "stage": "FINALIZING",
+          "result": {
+            "text": "Hello world",
+            "diarizedTranscript": [ { "speaker": "creator", "text": "Hello world", "originalText": "Hello world", "language": "en", "languageName": "English" } ],
+            "audioMode": "spoken-narration",
+            "detectedLanguage": "en",
+            "detectedLanguageName": "English",
+            "languagesUsed": ["en"],
+            "languagesUsedNames": ["English"],
+            "isTranslated": false
+          }
+        }
+      }
+    }
+  }
+}

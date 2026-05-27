@@ -1,0 +1,17 @@
+# Agent-First Transcription API
+> A production-ready transcription API service designed for AI agent consumption, offering video and audio transcription, language detection, and diarization.
+
+## Core Documentation
+- [OpenAPI Specification](/openapi.json): Detailed API descriptions, request/response schemas, and endpoints.
+- [API Documentation](/docs): Swagger UI for the API.
+- [Redoc API Documentation](/redoc): Redoc UI for the API.
+
+## Endpoints
+- POST `/api/v1/transcribe/submit`: Submit a video or audio file for transcription via file upload or URL.
+- GET `/api/v1/transcribe/status/{job_id}`: Check the status of a transcription job.
+- GET `/api/v1/transcribe/result/{job_id}`: Retrieve results once complete.
+- GET `/health`: Health check endpoint to verify the service is alive.
+
+## Models and Context
+- The API processes files asynchronously. Agents should submit a job, check status, and retrieve results.
+- Outputs structured `TranscriptionResult` containing diarized segments and language information.

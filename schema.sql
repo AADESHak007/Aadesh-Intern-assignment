@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
   revoked BOOLEAN NOT NULL DEFAULT FALSE,
   usage_count INT NOT NULL DEFAULT 0,
   quota INT,
-  last_used_at TIMESTAMPTZ
+  last_used_at TIMESTAMPTZ,
+  tokens FLOAT NOT NULL DEFAULT 60.0,
+  last_refill TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS transcription_jobs (
