@@ -7,11 +7,15 @@ class TranscriptionClient:
     Agent-optimized Python SDK for the Transcription API.
     Provides simple, blocking methods to submit, check status, and retrieve results.
     """
-    def __init__(self, api_key: str, base_url: str = "http://localhost:8000"):
+    def __init__(self, api_key: str, base_url: str = "https://aadesh-intern-assignment.onrender.com"):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
         self.session.headers.update({"X-API-Key": self.api_key})
+
+    def check_health(self) -> bool:
+        resp = self.session.get(f"{self.base_url}/health")
+        return resp.status_code == 200
 
     def submit_job(self, source_url: Optional[str] = None, file_path: Optional[str] = None, model: str = "gemini-2.5-flash") -> Dict[str, Any]:
         """

@@ -3,6 +3,7 @@
 > A production-ready transcription API service designed explicitly for AI agent consumption, offering asynchronous video and audio transcription, language detection, and speaker diarization via Gemini and Chirp 3.
 
 ## Core Documentation
+- **Base URL**: `https://aadesh-intern-assignment.onrender.com`
 - [OpenAPI Specification](/openapi.json): Detailed API descriptions, exact typed request/response schemas, and endpoints. Agents should prefer parsing this directly.
 - [API Documentation](/docs): Swagger UI for human testing.
 
