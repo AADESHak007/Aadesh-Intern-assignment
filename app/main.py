@@ -104,13 +104,24 @@ async def get_well_known_openapi():
 async def startup_event() -> None:
     await connect_db()
 
-# Mount the MCP server for SSE
+# Mount MCP server (version-tolerant)
 try:
     from app.mcp_server import mcp
-    # The official FastMCP exposes an SSE app via get_sse_app() or sse_app()
-    # If using mcp.server.fastmcp, it usually returns an ASGI app.
-    # Check the exact method or just use the standard attribute:
-    app.mount("/mcp", mcp.get_sse_app() if hasattr(mcp, "get_sse_app") else getattr(mcp, "sse_app", getattr(mcp, "_asgi_app", None)) or mcp)
+
+    mcp_asgi = None
+    if hasattr(mcp, "get_sse_app"):
+        mcp_asgi = mcp.get_sse_app()
+    elif hasattr(mcp, "sse_app"):
+        mcp_asgi = mcp.sse_app
+    elif hasattr(mcp, "app"):
+        mcp_asgi = mcp.app
+    elif hasattr(mcp, "_asgi_app"):
+        mcp_asgi = mcp._asgi_app
+
+    if mcp_asgi is None:
+        raise RuntimeError("No compatible ASGI app found on MCP server object")
+
+    app.mount("/mcp", mcp_asgi)
 except Exception as e:
     print(f"Warning: Could not mount MCP server: {e}")
 
