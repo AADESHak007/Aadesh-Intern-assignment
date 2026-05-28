@@ -144,5 +144,11 @@ class UsageResponse(BaseModel):
     usage_count: int = Field(..., description="Total number of jobs submitted")
     quota: int | None = Field(None, description="Maximum number of jobs allowed (if any)")
     remaining_quota: int | None = Field(None, description="Number of jobs remaining before hitting quota")
-    tokens: float = Field(..., description="Current rate limiting tokens available")
+    tokens: float = Field(..., description="Current rate limiting tokens available (max 60, refills at 1/sec)")
     last_used_at: datetime | None = Field(None, description="When the key was last used")
+
+    # Token cost schedule — lets agents plan their call patterns programmatically
+    token_cost_submit: float = Field(5.0, description="Token cost to submit a transcription job (POST /transcriptions)")
+    token_cost_result: float = Field(1.0, description="Token cost to fetch a completed result (GET /transcriptions/{id}/result)")
+    token_cost_poll: float = Field(0.5, description="Token cost to poll job status or list jobs")
+    token_cost_health: float = Field(0.0, description="Token cost for health/schema endpoints (free)")

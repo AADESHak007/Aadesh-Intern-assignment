@@ -9,7 +9,13 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Uploa
 from config import UPLOADS_DIR
 from job_store import create_transcription_job, get_transcription_job, list_recent_jobs
 from job_worker import process_transcription_job
-from app.auth import verify_and_rate_limit
+from app.auth import (
+    require_tokens,
+    TOKEN_COST_HEAVY,
+    TOKEN_COST_LIGHTWEIGHT,
+    TOKEN_COST_READ,
+    TOKEN_COST_STANDARD,
+)
 from uuid import UUID
 from app.schemas import (
     CreateTranscriptionResponse,
@@ -82,7 +88,7 @@ async def create_transcription(
         description="Optional webhook URL to receive job completion notifications.",
         example="https://example.com/webhook",
     ),
-    api_key_id: UUID = Depends(verify_and_rate_limit),
+    api_key_id: UUID = Depends(require_tokens(TOKEN_COST_HEAVY)),
 ) -> CreateTranscriptionResponse:
     if file is None and not source_url:
         raise HTTPException(status_code=400, detail="Please provide either a file upload or a source_url.")
@@ -129,7 +135,7 @@ async def create_transcription(
         400: {"model": ErrorResponse, "description": "Invalid query parameters."},
     },
 )
-async def list_transcriptions(limit: int = 20, api_key_id: UUID = Depends(verify_and_rate_limit)) -> list[TranscriptionJobStatus]:
+async def list_transcriptions(limit: int = 20, api_key_id: UUID = Depends(require_tokens(TOKEN_COST_LIGHTWEIGHT))) -> list[TranscriptionJobStatus]:
     jobs = await list_recent_jobs(limit)
     results: list[TranscriptionJobStatus] = []
     for job in jobs:
@@ -162,7 +168,7 @@ async def list_transcriptions(limit: int = 20, api_key_id: UUID = Depends(verify
         404: {"model": ErrorResponse, "description": "Job not found."},
     },
 )
-async def get_transcription_status(job_id: str, api_key_id: UUID = Depends(verify_and_rate_limit)) -> TranscriptionJobStatus:
+async def get_transcription_status(job_id: str, api_key_id: UUID = Depends(require_tokens(TOKEN_COST_LIGHTWEIGHT))) -> TranscriptionJobStatus:
     job = await get_transcription_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -195,7 +201,7 @@ async def get_transcription_status(job_id: str, api_key_id: UUID = Depends(verif
         404: {"model": ErrorResponse, "description": "Job not found."},
     },
 )
-async def get_transcription_result(job_id: str, api_key_id: UUID = Depends(verify_and_rate_limit)) -> TranscriptionResultEnvelope:
+async def get_transcription_result(job_id: str, api_key_id: UUID = Depends(require_tokens(TOKEN_COST_STANDARD))) -> TranscriptionResultEnvelope:
     job = await get_transcription_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -258,7 +264,7 @@ async def get_transcription_result(job_id: str, api_key_id: UUID = Depends(verif
         409: {"model": ErrorResponse, "description": "Job failed."},
     },
 )
-async def get_raw_transcription_result(job_id: str, api_key_id: UUID = Depends(verify_and_rate_limit)) -> TranscriptionResult:
+async def get_raw_transcription_result(job_id: str, api_key_id: UUID = Depends(require_tokens(TOKEN_COST_STANDARD))) -> TranscriptionResult:
     job = await get_transcription_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -289,7 +295,7 @@ async def get_raw_transcription_result(job_id: str, api_key_id: UUID = Depends(v
     description="Return the JSON schema for the TranscriptionResult object, useful for programmatic clients.",
     tags=["System"],
 )
-async def get_transcription_result_schema() -> dict:
+async def get_transcription_result_schema() -> dict:  # no auth needed — public schema
     return TranscriptionResult.model_json_schema()
 
 
@@ -300,7 +306,7 @@ async def get_transcription_result_schema() -> dict:
     description="Fetch your current API key usage, remaining quota, and available rate limit tokens.",
     tags=["System"],
 )
-async def get_api_usage(api_key_id: UUID = Depends(verify_and_rate_limit)) -> UsageResponse:
+async def get_api_usage(api_key_id: UUID = Depends(require_tokens(TOKEN_COST_LIGHTWEIGHT))) -> UsageResponse:
     from db import get_pool
     pool = get_pool()
     async with pool.acquire() as conn:
@@ -326,6 +332,7 @@ async def get_api_usage(api_key_id: UUID = Depends(verify_and_rate_limit)) -> Us
         )
 
 
-@router.get("/health", tags=["System"])
+@router.get("/health", tags=["System"], include_in_schema=True)
 async def health_check() -> dict[str, str]:
+    """Free health check — no token deduction."""
     return {"status": "ok"}
