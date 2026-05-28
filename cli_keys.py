@@ -5,6 +5,7 @@ import sys
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 from db import connect_db, disconnect_db, execute, fetch, fetchrow
+DEFAULT_QUOTA = 125
 
 async def create_key(label: str, quota: int):
     api_key = f"ak_{secrets.token_urlsafe(32)}"
@@ -45,7 +46,12 @@ async def main():
 
     create_parser = subparsers.add_parser("create", help="Create a new API key")
     create_parser.add_argument("--label", type=str, help="Label for the key (e.g., 'Agent A')")
-    create_parser.add_argument("--quota", type=int, default=None, help="Maximum number of requests allowed")
+    create_parser.add_argument(
+        "--quota",
+        type=int,
+        default=DEFAULT_QUOTA,
+        help=f"Maximum number of requests allowed (default: {DEFAULT_QUOTA})",
+    )
 
     subparsers.add_parser("list", help="List all API keys")
 
