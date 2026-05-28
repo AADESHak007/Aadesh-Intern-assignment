@@ -109,7 +109,9 @@ try:
     from app.mcp_server import mcp
 
     mcp_asgi = None
-    if hasattr(mcp, "get_sse_app"):
+    if hasattr(mcp, "streamable_http_app"):
+        mcp_asgi = mcp.streamable_http_app()
+    elif hasattr(mcp, "get_sse_app"):
         mcp_asgi = mcp.get_sse_app()
     elif hasattr(mcp, "sse_app"):
         mcp_asgi = mcp.sse_app
@@ -124,6 +126,22 @@ try:
     app.mount("/mcp", mcp_asgi)
 except Exception as e:
     print(f"Warning: Could not mount MCP server: {e}")
+
+
+@app.get("/mcp-health", include_in_schema=False)
+async def mcp_health():
+    try:
+        from app.mcp_server import mcp
+        return {
+            "ok": True,
+            "type": str(type(mcp)),
+            "has_streamable_http_app": hasattr(mcp, "streamable_http_app"),
+            "has_get_sse_app": hasattr(mcp, "get_sse_app"),
+            "has_sse_app": hasattr(mcp, "sse_app"),
+            "has_app": hasattr(mcp, "app"),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.on_event("shutdown")

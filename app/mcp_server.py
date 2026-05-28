@@ -1,11 +1,11 @@
 import asyncio
-from typing import Optional, List, Dict, Any
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from job_store import create_transcription_job, get_transcription_job, list_recent_jobs
 from job_worker import process_transcription_job
 
-mcp = FastMCP("Transcription Server")
+mcp = FastMCP("Transcription Server", stateless_http=True)
 
 @mcp.tool()
 async def submit_transcription_job(source_url: str, model: str = "gemini-2.5-flash") -> str:
