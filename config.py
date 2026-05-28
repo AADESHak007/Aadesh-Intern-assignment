@@ -209,16 +209,50 @@ def get_gemini():
 
 
 # ---------------------------------------------------------------------------
-# Media part helper (Vertex AI uses inline bytes, not Files API)
+# Media part helper
 # ---------------------------------------------------------------------------
 
+# Gemini Vertex AI caps inline bytes at ~20 MB. Above this threshold we stage
+# the file via the Gemini Files API and pass a URI reference instead, which
+# avoids loading large files into RAM and hitting the inline size limit.
+GEMINI_INLINE_MAX_BYTES: int = int(os.getenv("GEMINI_INLINE_MAX_BYTES", 20 * 1024 * 1024))  # 20 MB
+
+
 def prepare_media_part(media: pathlib.Path) -> object:
-    """Read a local video/audio file and return a Gemini Part with inline bytes."""
+    """Return a Gemini Part for `media`, choosing the right strategy by size.
+
+    - Files < GEMINI_INLINE_MAX_BYTES (default 20 MB): sent inline as bytes.
+      Fast, no extra network round-trip.
+    - Files >= GEMINI_INLINE_MAX_BYTES: uploaded to Gemini File API first,
+      then referenced by URI. This handles files up to 2 GB and prevents
+      loading the entire file into server RAM.
+    """
     import mimetypes
     from google.genai import types as _types
 
     mime, _ = mimetypes.guess_type(str(media))
     if not mime:
         mime = "video/mp4"
-    data = media.read_bytes()
-    return _types.Part.from_bytes(data=data, mime_type=mime)
+
+    file_size = media.stat().st_size
+
+    if file_size < GEMINI_INLINE_MAX_BYTES:
+        # Small file: inline bytes path (fast, no API round-trip)
+        log(f"  media: inline upload {media.name} ({file_size / 1024:.0f} KB)")
+        return _types.Part.from_bytes(data=media.read_bytes(), mime_type=mime)
+
+    # Large file: use Gemini File API staging
+    log(f"  media: large file ({file_size / 1024 / 1024:.1f} MB), uploading via File API...")
+    try:
+        gemini = get_gemini()
+        uploaded = gemini.files.upload(
+            file=str(media),
+            config={"mime_type": mime, "display_name": media.name},
+        )
+        log(f"  media: File API upload complete → {uploaded.uri}")
+        return _types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime)
+    except Exception as e:
+        # Fallback: try inline anyway (may fail for very large files, but
+        # this gives a clearer downstream error than a silent empty result)
+        log(f"  media: File API upload failed ({e}), falling back to inline bytes")
+        return _types.Part.from_bytes(data=media.read_bytes(), mime_type=mime)
