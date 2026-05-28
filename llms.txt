@@ -14,16 +14,20 @@
 
 The API processes media asynchronously. Agents must follow this exact sequence:
 
-1. **Submit a Job (`POST /transcriptions`)**
+1. **Create an API Key (`POST /api-keys`)**
+   - Call this endpoint first to bootstrap access without human intervention.
+   - Store the returned `api_key` securely and send it as `X-API-Key` on protected endpoints.
+
+2. **Submit a Job (`POST /transcriptions`)**
    - Provide either a `file` (multipart upload) OR a public `source_url`.
    - The API will respond with `202 Accepted` and return a `job_id`.
 
-2. **Check Status (`GET /transcriptions/{job_id}`)**
+3. **Check Status (`GET /transcriptions/{job_id}`)**
    - Poll this endpoint using exponential backoff to check the `status`.
    - Valid statuses are `PENDING`, `RUNNING`, `COMPLETED`, and `FAILED`.
    - If `FAILED`, inspect the granular `error_code` (e.g. `MEDIA_DOWNLOAD_FAILED`, `UPSTREAM_UNAVAILABLE`) to decide if a retry is possible.
 
-3. **Retrieve Results (`GET /transcriptions/{job_id}/result/raw`)**
+4. **Retrieve Results (`GET /transcriptions/{job_id}/result/raw`)**
    - Once the status is `COMPLETED`, use this endpoint to fetch the pure JSON `TranscriptionResult` object directly.
    - You can fetch the exact JSON schema definition for this object ahead of time at `GET /schemas/transcription-result`.
 

@@ -152,3 +152,23 @@ class UsageResponse(BaseModel):
     token_cost_result: float = Field(1.0, description="Token cost to fetch a completed result (GET /transcriptions/{id}/result)")
     token_cost_poll: float = Field(0.5, description="Token cost to poll job status or list jobs")
     token_cost_health: float = Field(0.0, description="Token cost for health/schema endpoints (free)")
+
+
+class ApiKeyCreateRequest(BaseModel):
+    label: str | None = Field(
+        None,
+        description="Optional label for the API key (e.g., agent name or workflow id).",
+        example="autonomous-agent-1",
+    )
+    quota: int | None = Field(
+        None,
+        description="Optional quota override. If omitted, a generous default quota is applied.",
+        example=25,
+    )
+
+
+class ApiKeyCreateResponse(BaseModel):
+    id: str = Field(..., description="Unique API key identifier")
+    api_key: str = Field(..., description="Secret API key value. Returned only once.")
+    label: str | None = Field(None, description="Label associated with the key")
+    quota: int = Field(..., description="Quota assigned to this key")

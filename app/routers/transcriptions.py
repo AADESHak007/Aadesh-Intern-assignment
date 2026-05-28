@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 import os
+import secrets
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, Depends
 
@@ -24,9 +25,48 @@ from app.schemas import (
     TranscriptionResult,
     TranscriptionResultEnvelope,
     UsageResponse,
+    ApiKeyCreateRequest,
+    ApiKeyCreateResponse,
 )
 
 router = APIRouter(tags=["Transcriptions"])
+DEFAULT_API_KEY_QUOTA = 25
+
+
+@router.post(
+    "/api-keys",
+    response_model=ApiKeyCreateResponse,
+    status_code=201,
+    summary="Create API key",
+    description="Create a new API key for agent bootstrap. Returns the secret key once; store it securely.",
+    tags=["System"],
+    responses={500: {"model": ErrorResponse, "description": "Failed to create API key."}},
+)
+async def create_api_key(payload: ApiKeyCreateRequest) -> ApiKeyCreateResponse:
+    from db import get_pool
+
+    quota = payload.quota if payload.quota is not None else DEFAULT_API_KEY_QUOTA
+    api_key = f"ak_{secrets.token_urlsafe(32)}"
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO api_keys (api_key, label, quota)
+            VALUES ($1, $2, $3)
+            RETURNING id, api_key, label, quota
+            """,
+            api_key,
+            payload.label,
+            quota,
+        )
+    if not row:
+        raise HTTPException(status_code=500, detail="Failed to create API key")
+    return ApiKeyCreateResponse(
+        id=str(row["id"]),
+        api_key=row["api_key"],
+        label=row["label"],
+        quota=row["quota"],
+    )
 
 
 async def save_upload_file(file: UploadFile) -> str:
