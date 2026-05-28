@@ -20,7 +20,7 @@ from app.schemas import (
     UsageResponse,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["Transcriptions"])
 
 
 async def save_upload_file(file: UploadFile) -> str:
@@ -287,6 +287,7 @@ async def get_raw_transcription_result(job_id: str, api_key_id: UUID = Depends(v
     "/schemas/transcription-result",
     summary="Get TranscriptionResult JSON Schema",
     description="Return the JSON schema for the TranscriptionResult object, useful for programmatic clients.",
+    tags=["System"],
 )
 async def get_transcription_result_schema() -> dict:
     return TranscriptionResult.model_json_schema()
@@ -297,6 +298,7 @@ async def get_transcription_result_schema() -> dict:
     response_model=UsageResponse,
     summary="Get API Key Usage",
     description="Fetch your current API key usage, remaining quota, and available rate limit tokens.",
+    tags=["System"],
 )
 async def get_api_usage(api_key_id: UUID = Depends(verify_and_rate_limit)) -> UsageResponse:
     from db import get_pool
@@ -324,6 +326,6 @@ async def get_api_usage(api_key_id: UUID = Depends(verify_and_rate_limit)) -> Us
         )
 
 
-@router.get("/health")
+@router.get("/health", tags=["System"])
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}

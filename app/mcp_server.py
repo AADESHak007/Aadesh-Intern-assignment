@@ -10,8 +10,9 @@ mcp = FastMCP("Transcription Server")
 @mcp.tool()
 async def submit_transcription_job(source_url: str, model: str = "gemini-2.5-flash") -> str:
     """
-    Submits a video or audio file URL for transcription.
-    Returns the job_id which can be used to check the status.
+    Submits a video or audio file URL for transcription processing.
+    Note: This bypasses the API key authentication requirement of the main API.
+    Returns a string containing the job_id, which must be used with get_job_status to check progress.
     """
     job = await create_transcription_job(
         source_type="URL",
@@ -44,6 +45,7 @@ async def get_job_status(job_id: str) -> str:
 async def get_job_result(job_id: str) -> str:
     """
     Fetches the final structured transcription result for a completed job.
+    Returns the result as a stringified object. For the raw dictionary, use get_raw_job_result.
     """
     job = await get_transcription_job(job_id)
     if not job:
@@ -51,6 +53,23 @@ async def get_job_result(job_id: str) -> str:
     
     if job["status"] == "COMPLETED":
         return f"Job completed. Result: {job.get('result')}"
+    elif job["status"] == "FAILED":
+        return f"Job failed. Error: {job.get('error_message')}"
+    else:
+        return f"Job is still processing. Current status: {job['status']}"
+
+@mcp.tool()
+async def get_raw_job_result(job_id: str) -> Any:
+    """
+    Fetches the raw structured transcription result object for a completed job.
+    Returns the exact JSON dictionary containing the transcribed text and diarization.
+    """
+    job = await get_transcription_job(job_id)
+    if not job:
+        return f"Job not found for ID: {job_id}"
+    
+    if job["status"] == "COMPLETED":
+        return job.get("result", {})
     elif job["status"] == "FAILED":
         return f"Job failed. Error: {job.get('error_message')}"
     else:
@@ -75,6 +94,7 @@ async def health_check() -> str:
     """
     Health check endpoint to verify the service is alive.
     """
+    return "Service is alive and healthy."
 @mcp.tool()
 async def get_api_usage(api_key: str) -> str:
     """

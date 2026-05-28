@@ -3,6 +3,17 @@ from fastapi import FastAPI
 from app.routers.transcriptions import router as transcriptions_router
 from db import connect_db, disconnect_db
 
+tags_metadata = [
+    {
+        "name": "Transcriptions",
+        "description": "Operations to submit and retrieve asynchronous transcription jobs.",
+    },
+    {
+        "name": "System",
+        "description": "System health and usage information.",
+    },
+]
+
 app = FastAPI(
     title="Agent-First Transcription API",
     description="Asynchronous transcription service for video/audio inputs.",
@@ -10,6 +21,7 @@ app = FastAPI(
     openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
+    openapi_tags=tags_metadata,
 )
 
 app.include_router(transcriptions_router)
