@@ -14,6 +14,7 @@ from job_store import (
     increment_attempts,
     update_job_stage,
 )
+from exceptions import TranscriptionPipelineError
 from transcribe import transcribe
 
 
@@ -85,12 +86,28 @@ async def process_transcription_job(job_id: str) -> None:
             }
             await asyncio.to_thread(_notify_callback, callback_url, payload)
 
+    except TranscriptionPipelineError as exc:
+        await fail_job(
+            job_id,
+            error_code=exc.error_code,
+            error_message=str(exc),
+            suggested_action=exc.suggested_action,
+        )
+        if callback_url:
+            payload = {
+                "job_id": job_id,
+                "status": "FAILED",
+                "error_message": str(exc),
+                "error_code": exc.error_code,
+            }
+            await asyncio.to_thread(_notify_callback, callback_url, payload)
+            
     except Exception as exc:
         await fail_job(
             job_id,
-            error_code="TRANSCRIPTION_ERROR",
+            error_code="TRANSCRIPTION_INTERNAL_ERROR",
             error_message=str(exc),
-            suggested_action="Verify the source input and AI pipeline configuration.",
+            suggested_action="An unexpected internal error occurred. Please check the logs.",
         )
         if callback_url:
             payload = {

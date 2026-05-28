@@ -30,6 +30,13 @@ from config import (
     retry_with_backoff,
     usage_tracker,
 )
+from exceptions import (
+    MediaDownloadError,
+    MediaFormatError,
+    TranscriptionInternalError,
+    UpstreamRateLimitError,
+    UpstreamUnavailableError,
+)
 from rate_limiter import acquire as rate_limit_acquire
 from schemas import TRANSCRIPTION_PROMPT, TranscriptionResult
 
@@ -117,27 +124,36 @@ def detect_language(wav_path: str) -> str:
 def download_to_wav(url: str) -> str:
     """Download video/audio from URL, extract 16kHz mono WAV. Returns wav path."""
     tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-    r = requests.get(url, stream=True, timeout=30)
-    r.raise_for_status()
+    try:
+        r = requests.get(url, stream=True, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        tmp.close()
+        os.unlink(tmp.name)
+        raise MediaDownloadError(f"Failed to download media: {e}")
     for chunk in r.iter_content(8192):
         tmp.write(chunk)
     tmp.close()
     wav_path = tmp.name.replace(".mp4", ".wav")
-    subprocess.run(
+    res = subprocess.run(
         ["ffmpeg", "-y", "-i", tmp.name, "-vn", "-ar", "16000", "-ac", "1", wav_path],
         capture_output=True, timeout=30,
     )
     os.unlink(tmp.name)
+    if res.returncode != 0:
+        raise MediaFormatError(f"FFmpeg failed to extract audio: {res.stderr.decode('utf-8', errors='ignore')}")
     return wav_path
 
 
 def extract_wav_from_file(input_path: str) -> str:
     """Extract 16kHz mono WAV from a local video/audio file."""
     wav_path = tempfile.mktemp(suffix=".wav")
-    subprocess.run(
+    res = subprocess.run(
         ["ffmpeg", "-y", "-i", input_path, "-vn", "-ar", "16000", "-ac", "1", wav_path],
         capture_output=True, timeout=30,
     )
+    if res.returncode != 0:
+        raise MediaFormatError(f"FFmpeg failed to extract audio: {res.stderr.decode('utf-8', errors='ignore')}")
     return wav_path
 
 
@@ -187,9 +203,16 @@ def chirp3_diarize(wav_path: str, lang_codes: list[str]) -> tuple[str, int]:
                 recognizer=f"projects/{GCP_PROJECT_ID}/locations/us/recognizers/_",
                 config=config, content=audio,
             )
-            response = client.recognize(request=request)
+            try:
+                response = client.recognize(request=request)
+            except Exception as inner_e:
+                if "429" in str(inner_e):
+                    raise UpstreamRateLimitError(f"Chirp 3 rate limit exceeded: {inner_e}")
+                raise UpstreamUnavailableError(f"Chirp 3 diarization failed: {inner_e}")
         else:
-            raise
+            if "429" in str(e):
+                raise UpstreamRateLimitError(f"Chirp 3 rate limit exceeded: {e}")
+            raise UpstreamUnavailableError(f"Chirp 3 diarization failed: {e}")
     lines, spkrs = [], set()
     for result in response.results:
         alt = result.alternatives[0]
@@ -251,7 +274,13 @@ def _gemini_transcribe_single(gemini, part, use_model, path, cache_json, prompt=
                 f"for {path.name}: {str(e)[:120]}")
             time.sleep(min(2 ** attempt, 8))
     else:
-        raise last_error or RuntimeError("Gemini transcription failed")
+        if last_error:
+            if isinstance(last_error, json.JSONDecodeError):
+                raise TranscriptionInternalError(f"Gemini returned invalid JSON: {last_error}")
+            if "429" in str(last_error):
+                raise UpstreamRateLimitError(f"Gemini rate limit exceeded: {last_error}")
+            raise UpstreamUnavailableError(f"Gemini unavailable or error: {last_error}")
+        raise TranscriptionInternalError("Gemini transcription failed without specific error.")
 
     for k, v in _DEFAULTS.items():
         result.setdefault(k, v)
@@ -399,8 +428,13 @@ def transcribe(
             path = pathlib.Path(input_path)
         elif url:
             tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-            r = requests.get(url, stream=True, timeout=60)
-            r.raise_for_status()
+            try:
+                r = requests.get(url, stream=True, timeout=60)
+                r.raise_for_status()
+            except Exception as e:
+                tmp.close()
+                os.unlink(tmp.name)
+                raise MediaDownloadError(f"Failed to download media: {e}")
             for chunk in r.iter_content(8192):
                 tmp.write(chunk)
             tmp.close()

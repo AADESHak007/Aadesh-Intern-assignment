@@ -247,6 +247,52 @@ async def get_transcription_result(job_id: str, api_key_id: UUID = Depends(verif
 
 
 @router.get(
+    "/transcriptions/{job_id}/result/raw",
+    response_model=TranscriptionResult,
+    summary="Fetch raw transcription result",
+    description="Return the exact structured transcription output without the status envelope.",
+    responses={
+        200: {"description": "Transcription result returned."},
+        202: {"description": "Job is still processing."},
+        404: {"model": ErrorResponse, "description": "Job not found."},
+        409: {"model": ErrorResponse, "description": "Job failed."},
+    },
+)
+async def get_raw_transcription_result(job_id: str, api_key_id: UUID = Depends(verify_and_rate_limit)) -> TranscriptionResult:
+    job = await get_transcription_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job["status"] == "FAILED":
+        raise HTTPException(status_code=409, detail=f"Job failed: {job.get('error_message')}")
+
+    if job["status"] != "COMPLETED":
+        raise HTTPException(status_code=202, detail="Job is still processing")
+
+    raw = job.get("result")
+    if raw is None:
+        raise HTTPException(status_code=404, detail="Result not found in completed job")
+
+    try:
+        if isinstance(raw, dict):
+            return TranscriptionResult.model_validate(raw)
+        else:
+            import json as _json
+            return TranscriptionResult.model_validate(_json.loads(raw))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse result: {e}")
+
+
+@router.get(
+    "/schemas/transcription-result",
+    summary="Get TranscriptionResult JSON Schema",
+    description="Return the JSON schema for the TranscriptionResult object, useful for programmatic clients.",
+)
+async def get_transcription_result_schema() -> dict:
+    return TranscriptionResult.model_json_schema()
+
+
+@router.get(
     "/usage",
     response_model=UsageResponse,
     summary="Get API Key Usage",
