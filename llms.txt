@@ -4,7 +4,7 @@
 
 ## Core Documentation
 - **Base URL**: `https://aadesh-intern-assignment.onrender.com`
-- [OpenAPI Specification](/openapi.json): Detailed API descriptions, exact typed request/response schemas, and endpoints. Agents should prefer parsing this directly.
+- [OpenAPI Specification](https://aadesh-intern-assignment.onrender.com/openapi.json): Detailed API descriptions, exact typed request/response schemas, and endpoints. Agents should prefer parsing this directly.
 - [API Documentation](/docs): Swagger UI for human testing.
 
 ## Authentication & Rate Limiting

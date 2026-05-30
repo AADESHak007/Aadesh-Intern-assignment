@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+import os
 
 from app.routers.transcriptions import router as transcriptions_router
 from db import connect_db, disconnect_db
@@ -18,6 +19,8 @@ tags_metadata = [
     },
 ]
 
+DEPLOYED_BASE_URL = os.getenv("DEPLOYED_BASE_URL", "http://localhost:8000").rstrip("/")
+
 app = FastAPI(
     title="Agent-First Transcription API",
     description="Asynchronous transcription service for video/audio inputs.",
@@ -29,8 +32,6 @@ app = FastAPI(
 )
 
 app.include_router(transcriptions_router)
-
-import os
 from fastapi.responses import FileResponse
 
 @app.get("/llms.txt", include_in_schema=False)
@@ -88,10 +89,10 @@ async def get_ai_plugin():
         },
         "api": {
             "type": "openapi",
-            "url": "http://localhost:8000/openapi.json",
+            "url": f"{DEPLOYED_BASE_URL}/openapi.json",
             "has_user_authentication": True
         },
-        "logo_url": "http://localhost:8000/logo.png",
+        "logo_url": f"{DEPLOYED_BASE_URL}/logo.png",
         "contact_email": "support@example.com",
         "legal_info_url": "http://example.com/legal"
     }
